@@ -10,3 +10,5 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 
 add_executable(run_filter main.cc)
 target_link_libraries(run_filter ukf)
+
+add_executable(run_tests utils_tests.cc)
