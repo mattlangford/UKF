@@ -1,8 +1,13 @@
 #include <iostream>
 #include <Eigen/Dense>
 
+Eigen::MatrixXd transform(Eigen::MatrixXd points)
+{
+    Eigen::Vector2d t_vec(10, -5);
+    points = points.colwise() + t_vec;
 
-
+    return points;
+}
 
 int main()
 {
@@ -29,16 +34,19 @@ int main()
     sigmas.block<2, 2>(0, 1) = (sqrt_m).colwise() + mean;
     sigmas.block<2, 2>(0, 3) = (-sqrt_m).colwise() + mean;
 
-    Eigen::MatrixXd mean_centered = sigmas.colwise() - mean;
+    sigmas = transform(sigmas);
 
     double wm_0 = (lambda / (dims + lambda));
     double wm_i = 0.5 / (dims + lambda);
 
-    Eigen::Vector2d new_mean;
+    Eigen::Vector2d new_mean = Eigen::Vector2d::Zero(2, 1);
     for (size_t i = 0; i < 5; ++i)
     {
-         
+        double weight = i == 0 ? wm_0 : wm_i;
+        new_mean += weight * sigmas.col(i);
     }
+
+    Eigen::MatrixXd mean_centered = sigmas.colwise() - new_mean;
 
     // Recompute covariance
     double wc_0 = (lambda / (dims + lambda)) + (1 - alpha * alpha + beta);
@@ -55,6 +63,8 @@ int main()
         new_covariance += weight * mean_centered.col(i) * mean_centered.col(i).transpose();
     }
 
+    std::cout << "new_mean" << std::endl;
+    std::cout << new_mean << std::endl;
     std::cout << "new_covariance" << std::endl;
     std::cout << new_covariance << std::endl;
     std::cout << std::endl;
