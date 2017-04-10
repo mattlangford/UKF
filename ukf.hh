@@ -2,6 +2,10 @@
 #include <Eigen/Dense>
 #include <chrono>
 
+#include "utils.hh"
+
+// TODO: Move function implementations over to the cc file
+
 namespace ukf
 {
 
@@ -11,18 +15,22 @@ namespace ukf
 using Clock     = std::chrono::high_resolution_clock;
 using Timestamp = Clock::time_point;
 
+//
+// enum for indexing covariance matrix, these don't really apply
+// to the main State type since it's a struct
+//
 enum states : uint8_t
 {
-    X,  // m
+    X,
     Y,
     Z,
-    VX,  // m/s
+    VX,
     VY,
     VZ,
-    RX,  // rads, I'd like to get rid of Euler math
+    RX,  
     RY,
     RZ,
-    WX,  // rads/s
+    WX,
     WY,
     WZ,
     AX_b,  // meas_a = R * (real_a - bias)
@@ -51,20 +59,15 @@ enum states : uint8_t
 //   bias = -R_inv * measured_a + [0, 0, 1]
 //
 
-// Things preventing Quaternion solution:
-//   - How to covariance with Quaternion?
-//     * how to represent "rotational variance" in the matrix
-//
-
 // This is an alternate way to keep track of the state...
 struct State
 {
-    Eigen::Vector3d    position;
-    Eigen::Vector3d    velocity;
-    Eigen::Quaterniond orientation;
-    Eigen::Vector3d    angular_vel;
-    Eigen::Vector3d    acc_bias;
-    Eigen::Vector3d    gyro_bias;
+    Eigen::Vector3d    position;  // meters
+    Eigen::Vector3d    velocity;  // meters per second
+    Eigen::Quaterniond orientation;  // NOTE: math overloads are done in utils.hh
+    Eigen::Vector3d    angular_vel;  // rads per second
+    Eigen::Vector3d    acc_bias;  // meters per second^2
+    Eigen::Vector3d    gyro_bias;  // rads per second
 };
 
 //
@@ -194,7 +197,8 @@ private: // methods ////////////////////////////////////////////////////////////
                                            const Covariance & initial_covariance,
                                            const Func         transition_f) const
     {
-        
+        // TODO: Initial tests looked good for R3, but this needs to work on SO3 and R3
+
         // LDLT is better I think
         const Eigen::LLT<Covariance> cov_sqrt(initial_covariance.llt().matrixL());
 
