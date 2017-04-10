@@ -1,73 +1,48 @@
 #include <iostream>
 #include <Eigen/Dense>
 
-Eigen::MatrixXd transform(Eigen::MatrixXd points)
-{
-    Eigen::Vector2d t_vec(10, -5);
-    points = points.colwise() + t_vec;
 
-    return points;
+//
+// Computes the mapping from R3 -> SO3
+// Basically from the tangent space of one rotation to another rotation
+//
+Eigen::Matrix3d exp(const Eigen::Vector3d &w)
+{
+    // skew symmetric matrix forming the Lie Algebra
+    Eigen::Matrix3d w_x;
+    w_x <<   0.0, -w.z(),  w.y(),
+           w.z(),    0.0, -w.x(),
+          -w.y(),  w.x(),    0.0;
+
+    // compute theta squared which can be used without square rooting
+    const double theta_2 = w.transpose() * w;
+
+    // taylor series expansion
+    Eigen::Matrix3d second_term = w_x;
+    second_term *= (1 - theta_2 / 6.0 + (theta_2 * theta_2) / 120.0);
+
+    Eigen::Matrix3d third_term = w_x * w_x;
+    third_term *= (0.5 - theta_2 / 12.0 + (theta_2 * theta_2) / 720.0);
+
+    return Eigen::Matrix3d::Identity(3, 3) + second_term + third_term;
+}
+
+Eigen::Vector3d ln(const Eigen::Matrix3d &R)
+{
+    std::cout << ((R.trace() - 1) / 2.0) << std::endl;
+    const double theta = acos((R.trace() - 1) / 2.0);
+    const double factor = (0.5 + (theta * theta) / 12.0 + (7 * pow(theta, 4)) / 720.0);
+    std::cout << "theta " << theta << std::endl;
+    std::cout << "factor " << factor << std::endl;
+
+    Eigen::Matrix3d out_mat = factor * (R - R.transpose());
+    return {out_mat(2, 1), -out_mat(2, 0), out_mat(1, 0)};
 }
 
 int main()
 {
-    double dims = 2;
-    double alpha = 1E-3;
-    double beta = 2;
-    double kappa = 0;
-    double lambda = alpha * alpha * (dims + kappa) - dims;
-    std::cout << lambda << std::endl;
-
-    Eigen::Matrix2d mat;
-    
-    mat << 1.0, 0.5, 
-           0.3, 1.0;
-
-    const Eigen::LLT<Eigen::Matrix2d> llt = mat.llt();
-    Eigen::Matrix2d sqrt_m = llt.matrixL();
-    sqrt_m *= sqrtf(dims + lambda);
-
-    const Eigen::Vector2d mean(0.3, 100);
-    Eigen::Matrix<double, 2, 5> sigmas = Eigen::MatrixXd::Zero(2, 5);
-
-    sigmas.block<2, 1>(0, 0) = mean;
-    sigmas.block<2, 2>(0, 1) = (sqrt_m).colwise() + mean;
-    sigmas.block<2, 2>(0, 3) = (-sqrt_m).colwise() + mean;
-
-    sigmas = transform(sigmas);
-
-    double wm_0 = (lambda / (dims + lambda));
-    double wm_i = 0.5 / (dims + lambda);
-
-    Eigen::Vector2d new_mean = Eigen::Vector2d::Zero(2, 1);
-    for (size_t i = 0; i < 5; ++i)
-    {
-        double weight = i == 0 ? wm_0 : wm_i;
-        new_mean += weight * sigmas.col(i);
-    }
-
-    Eigen::MatrixXd mean_centered = sigmas.colwise() - new_mean;
-
-    // Recompute covariance
-    double wc_0 = (lambda / (dims + lambda)) + (1 - alpha * alpha + beta);
-    double wc_i = 0.5 / (dims + lambda);
-
-    std::cout << wc_0 << " " << wc_i << std::endl;
-    
-    Eigen::Matrix2d new_covariance = Eigen::Matrix2d::Zero(2, 2);
-    for (size_t i = 0; i < 5; ++i)
-    {
-        double weight = i == 0 ? wc_0 : wc_i;
-        std::cout << weight << std::endl;
-        std::cout << mean_centered.col(i) * mean_centered.col(i).transpose() << std::endl;
-        new_covariance += weight * mean_centered.col(i) * mean_centered.col(i).transpose();
-    }
-
-    std::cout << "new_mean" << std::endl;
-    std::cout << new_mean << std::endl;
-    std::cout << "new_covariance" << std::endl;
-    std::cout << new_covariance << std::endl;
-    std::cout << std::endl;
-
-    std::cout << sigmas << std::endl;
+    Eigen::Vector3d w(0, 0.1, 0.1);
+    const Eigen::Matrix3d m = exp(w);
+    std::cout << m << std::endl;
+    std::cout << ln(m) << std::endl;
 }
