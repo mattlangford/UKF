@@ -67,16 +67,35 @@ struct State
     Eigen::Vector3d    gyro_bias;
 };
 
-// Only time will tell if this is an easier way
-//using State      = Eigen::Matrix<double, states::NUM_STATES, 1>;
+//
+// Covariance matrix, use the states enum to index this
+//
 using Covariance = Eigen::Matrix<double, states::NUM_STATES, states::NUM_STATES>;
+//
+// Computed during the UT, a list of 2 * states::NUM_STATES + 1 State's that
+// are passed into the transition function for each UT. The transition function
+// should return a new set of SigmaPoints.
+//
+using SigmaPoints = std::vector<State>;
 
+//
+// There should be 2*n + 1 sigma points, we can precompute this here
+//
+constexpr size_t NUM_SIGMA_POINTS = 2 * states::NUM_STATES + 1;
+
+//
+// Struct returned from the UKF
+//
 struct StateAndCovariance
 {
     State      state;
     Covariance covariance;
 };
 
+//
+// Parameters needed to do the UT, a lot of these are precalculated in order
+// to save compute time later on
+//
 struct ukf_params_t
 {
     // Could be better with some const
@@ -100,12 +119,17 @@ struct ukf_params_t
     double kappa;
     double lambda;    
 
-    // weights for computing sigma points
+    // weights for computing sigma points, the first element should be the weight
+    // of the 0th sigma point and the other weights are applied to the rest
     std::pair<double, double> mean_weight;
     std::pair<double, double> cov_weight;
 
 };
 
+
+//
+// The main event
+//
 class UKF
 {
 public: // constructor /////////////////////////////////////////////////////////
@@ -124,8 +148,41 @@ public: // constructor /////////////////////////////////////////////////////////
 public: // methods /////////////////////////////////////////////////////////////
 
     //
-    // Called with a new 
+    // Called with a new accelerometer measurement and time. This will update
+    // the estimated position, velocity, and rotation.
     //
+    void got_accelerometer(const Eigen::Vector3d & body_acc_biased, 
+                           const Eigen::Matrix3d & acc_cov, 
+                           const Timestamp &       time)
+    {
+        const double dt = std::chrono::duration<double>(time - last_time).count();
+
+        // First thing we will do is update positional states
+        const auto position_velocity_update = 
+            [&body_acc_biased, &dt](const SigmaPoints &in_states)
+        {
+            // Take the accelerometer numbers, and apply them to the position
+            // and velocty states
+            SigmaPoints out_states;
+            out_states.reserve(NUM_SIGMA_POINTS);
+            for (const State & state : in_states)
+            {
+                State new_state = std::move(state);
+                const Eigen::Vector3d acc_body = body_acc_biased - new_state.acc_bias;
+                const Eigen::Vector3d acc_world = body_acc_biased - new_state.acc_bias;
+
+                new_state.velocity += acc_body;
+            }
+
+        };
+
+        // Next we will attempt to correct our roll and pitch orientation
+        // using the assumption gravity is the only present acceleration 
+        
+
+        // Update our bias
+
+    }
     
 private: // methods ////////////////////////////////////////////////////////////
     
@@ -142,9 +199,14 @@ private: // methods ////////////////////////////////////////////////////////////
         const Eigen::LLT<Covariance> cov_sqrt(initial_covariance.llt().matrixL());
 
 
-        // There should be 2*n + 1 sigma points
-        const size_t num_sigma_points = 2 * states::NUM_STATES + 1;
-
+        // Recompute covariance
+        // for (size_t i = 0; i < 5; ++i)
+        // {
+        //     double weight = i == 0 ? wc_0 : wc_i;
+        //     std::cout << weight << std::endl;
+        //     std::cout << mean_centered.col(i) * mean_centered.col(i).transpose() << std::endl;
+        //     new_covariance += weight * mean_centered.col(i) * mean_centered.col(i).transpose();
+        // }
         return StateAndCovariance();
     }
 
