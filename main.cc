@@ -41,8 +41,36 @@ Eigen::Vector3d ln(const Eigen::Matrix3d &R)
 
 int main()
 {
-    Eigen::Vector3d w(0, 0.1, 0.1);
-    const Eigen::Matrix3d m = exp(w);
-    std::cout << m << std::endl;
-    std::cout << ln(m) << std::endl;
+    std::vector<Eigen::Matrix3d> rots(4);
+    rots[0] = exp({0.1, 0.1, 0.3});
+    rots[1] = exp({0.1, -0.1, 0.0});
+    rots[2] = exp({-0.1, 0.1, 0.0});
+    rots[3] = exp({-0.1, -0.1, 0.3});
+
+    Eigen::Matrix3d u = rots[0];
+    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
+
+    
+    for (size_t iters = 0; iters < 5; ++iters)
+    {
+        Eigen::MatrixXd v(3, rots.size());
+        Eigen::Matrix3d u_inv = u.inverse();
+        // build the v matrix
+        for (size_t i = 0; i < rots.size(); ++i)
+        {
+            v.col(i) = ln(rots[i] * u_inv);
+        }
+
+        // compute covariance and mean
+        Eigen::Vector3d tangent_space_avg = Eigen::Vector3d::Zero();
+        for (size_t i = 0; i < rots.size(); ++i)
+        {
+            cov += (1.0 / rots.size()) * v.col(i) * v.col(i).transpose();
+            tangent_space_avg += (1.0 / rots.size()) * v.col(i);
+        }
+        u = exp(tangent_space_avg) * u; 
+    }
+    std::cout << "=== RESULTS =============================" << std::endl;
+    std::cout << u << std::endl << std::endl;
+    std::cout << cov << std::endl;
 }
