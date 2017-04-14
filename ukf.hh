@@ -64,10 +64,33 @@ struct State
 {
     Eigen::Vector3d    position;  // meters
     Eigen::Vector3d    velocity;  // meters per second
-    Eigen::Quaterniond orientation;  // NOTE: math overloads are done in utils.hh
+    Eigen::Matrix3d    orientation;  // temporarily a rotation matrix
     Eigen::Vector3d    angular_vel;  // rads per second
     Eigen::Vector3d    acc_bias;  // meters per second^2
     Eigen::Vector3d    gyro_bias;  // rads per second
+
+    State()
+    {
+        // everything should get auto generated expect maybe this
+        orientation = Eigen::Matrix3d::Identity();
+    }
+
+    // makes the sigma point transformation pretty easy
+    State operator+(const Eigen::Matrix<double, states::NUM_STATES, 1>& lhs)
+    {
+        State new_state;
+        Eigen::Vector3d lie_rotation(ln(orientation));      
+        std::cout << "lie_rotation " << lie_rotation << std::endl;
+        new_state.position = position + lhs.block<3, 1>(states::X, 0);
+        new_state.velocity = velocity + lhs.block<3, 1>(states::VX, 0);
+        new_state.orientation = exp(lie_rotation + lhs.block<3, 1>(states::RX, 0));
+        std::cout << "rot_rotation " << new_state.orientation << std::endl;
+        new_state.angular_vel = angular_vel + lhs.block<3, 1>(states::WX, 0);
+        new_state.acc_bias = acc_bias + lhs.block<3, 1>(states::AX_b, 0);
+        new_state.gyro_bias = gyro_bias + lhs.block<3, 1>(states::GX_b, 0);
+
+        return new_state;
+    };
 };
 
 //
@@ -87,12 +110,17 @@ using SigmaPoints = std::vector<State>;
 constexpr size_t NUM_SIGMA_POINTS = 2 * states::NUM_STATES + 1;
 
 //
-// Struct returned from the UKF
+// Structs returned from the UKF
 //
 struct StateAndCovariance
 {
     State      state;
     Covariance covariance;
+};
+struct StateAndCrossCovariance
+{
+    State      state;
+    Covariance cross_covariance;
 };
 
 //
@@ -114,6 +142,8 @@ struct ukf_params_t
 
         cov_weight.first = mean_weight.first + (1 - alpha * alpha + beta);
         cov_weight.second = mean_weight.second;
+
+        sqrt_cov_factor = sqrtf(states::NUM_STATES + lambda);
     };
 
     // normal parameters
@@ -127,6 +157,9 @@ struct ukf_params_t
     std::pair<double, double> mean_weight;
     std::pair<double, double> cov_weight;
 
+    // the factor multiplied by the square root of the covairance matrix before
+    // each UT
+    double sqrt_cov_factor;
 };
 
 
