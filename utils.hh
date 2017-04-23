@@ -72,3 +72,4 @@ Eigen::Vector3d ln(const Eigen::Matrix3d &R)
     Eigen::Matrix3d out_mat = factor * (R - R.transpose());
     return {out_mat(2, 1), -out_mat(2, 0), out_mat(1, 0)};
 }
+

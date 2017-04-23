@@ -49,9 +49,8 @@ void rotate_vec_by_quat_tests()
 
     assert(is_close(expected_2, rotate_vec_by_quat(random_vector, random_2)));
 
-    std::cout << "PASS: rotate_vec_by_quat (and by quaternion multiplicaion) look good.";
+    std::cout << "PASS: rotate_vec_by_quat (and by quaternion multiplicaion) look good." << std::endl;
 }
-    
 
 int main()
 {
