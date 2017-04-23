@@ -312,27 +312,77 @@ private: // methods ////////////////////////////////////////////////////////////
                                            const Covariance & initial_covariance,
                                            const Func         transition_f) const
     {
-        // TODO: Initial tests looked good for R3, but this needs to work on SO3 and R3
+        // Let's do the transform now (not really covariance type, but close enough)
+        Covariance cov_sqrt = initial_covariance.llt().matrixL();
+        cov_sqrt *= params.sqrt_cov_factor;
 
-        // LDLT is better I think
-        const Eigen::LLT<Covariance> cov_sqrt(initial_covariance.llt().matrixL());
+        // populate sigma vector
+        SigmaPoints sigmas(NUM_SIGMA_POINTS);
+        sigmas[0] = initial_state;
+        for (size_t i = 0; i < NUM_STATES; ++i)
+        {
+            // since sigma[0] is taken, add one to the index
+            sigmas[2 * i + 1] = initial_state + cov_sqrt.row(i);
+            sigmas[2 * i + 2] = initial_state + -cov_sqrt.row(i);
+        }
 
+        // this function takes a SigmaPoints vector and transforms each point
+        transition_f(sigmas);
+        
+        //
+        // TODO: Redo the rotation stuff using more operator overloading to make it cleaner
+        //
+        std::vector<Eigen::Matrix3d> rotations;
+        rotations.reserve(NUM_SIGMA_POINTS);
+        for(const State& sigma : sigmas)
+        {
+            rotations.push_back(sigma.orientation); 
+        }
+        
+        // Compute mean
+        double mean_weight = params.mean_weight.first;
+        State new_state;
+        for (const State& sigma_point : sigmas)
+        {
+            new_state.position += mean_weight * sigma_point.position;
+            new_state.velocity += mean_weight * sigma_point.velocity;
+            new_state.angular_vel += mean_weight * sigma_point.angular_vel;
+            new_state.acc_bias += mean_weight * sigma_point.acc_bias;
+            new_state.gyro_bias += mean_weight * sigma_point.gyro_bias;
 
-        // Recompute covariance
-        // for (size_t i = 0; i < 5; ++i)
-        // {
-        //     double weight = i == 0 ? wc_0 : wc_i;
-        //     std::cout << weight << std::endl;
-        //     std::cout << mean_centered.col(i) * mean_centered.col(i).transpose() << std::endl;
-        //     new_covariance += weight * mean_centered.col(i) * mean_centered.col(i).transpose();
-        // }
-        return StateAndCovariance();
+            mean_weight = params.mean_weight.second;
+        }
+        Eigen::Vector3d lie_mean = average_rotations(rotations);
+        new_state.orientation = exp(lie_mean);
+
+        // Compute covariance
+        double cov_weight = params.cov_weight.first;
+        Covariance new_covariance = Covariance::Zero();
+        for (const State& sigma_point : sigmas)
+        {
+            Eigen::Matrix<double, NUM_STATES, 1> err;
+            err.block<3, 1>(states::X, 0) = sigma_point.position - new_state.position;
+            err.block<3, 1>(states::VX, 0) = sigma_point.velocity - new_state.velocity;
+            err.block<3, 1>(states::RX, 0) = ln(sigma_point.orientation) - lie_mean;
+            err.block<3, 1>(states::WX, 0) = sigma_point.angular_vel - new_state.angular_vel;
+            err.block<3, 1>(states::AX_b, 0) = sigma_point.acc_bias - new_state.acc_bias;
+            err.block<3, 1>(states::GX_b, 0) = sigma_point.gyro_bias - new_state.gyro_bias;
+
+            new_covariance += cov_weight * err * err.transpose();
+            cov_weight = params.cov_weight.second;
+        }
+
+        StateAndCovariance s_c;
+        s_c.state = new_state;
+        s_c.covariance = new_covariance;
+
+        return s_c;
     }
 
     //
     // compute the average of a set of rotation matricies
     // 
-    Eigen::Vector3d average_rotations(std::vector<Eigen::Matrix3d> rots)
+    Eigen::Vector3d average_rotations(std::vector<Eigen::Matrix3d> rots) const
     {
         Eigen::Matrix3d u = rots[0];
         Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
