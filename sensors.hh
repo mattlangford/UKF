@@ -1,6 +1,7 @@
 #pragma once
 #include <Eigen/Dense>
-#include "ukf.hh"
+
+#include "types.hh"
 
 namespace ukf
 {
