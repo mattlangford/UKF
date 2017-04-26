@@ -20,21 +20,20 @@ int main()
 {
 
 
-    // ukf_params_t params;
-    // State initial_state;
-    // Covariance initial_covariance = Covariance::Identity() * 1E-2;
+    ukf_params_t params;
+    State initial_state;
+    Covariance initial_covariance = Covariance::Identity() * 1E-2;
 
-    // initial_state.position << 1, 0, 0;
-    // initial_state.velocity << 1, 0, 0;
+    initial_state.position << 1, 0, 0;
+    initial_state.velocity << 1, 0, 0;
 
-    // double dt = 1;
+    StateAndCovariance initial;
+    initial.state = initial_state;
+    initial.covariance = initial_covariance;
 
-    // UKF kf(initial_state, initial_covariance, params);
-    // StateAndCovariance out = kf.unscented_transform(initial_state, initial_covariance, 
-    //         std::bind(transform, std::placeholders::_1, dt));
+    UKF kf({}, params);
 
-    // std::cout << "State: " << std::endl;
-    // out.state.print();
-    // std::cout << "Covariance: " << std::endl;
-    // std::cout << out.covariance << std::endl;
+    StateAndCovariance output = kf.update(initial, Clock::now());
+
+    output.state.print();
 }

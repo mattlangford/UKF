@@ -64,7 +64,7 @@ public: // constructor /////////////////////////////////////////////////////////
     // of inertial sensors, a list of observation sensors and some parameters used 
     // by the filter
     //
-    UKF(const Sensors &sensors, const ukf_params_t &params_) :
+    UKF(const Sensors &sensors_, const ukf_params_t &params_) :
         sensors(sensors_),
         params(params_),
         last_time(Clock::now())
@@ -175,7 +175,8 @@ public: // methods ////////////////////////////////////////////////////////////
     //
     void time_update_f(State& current_state, const Timestamp &time) const
     {
-        const double dt = std::chrono::duration_cast<std::chrono::milliseconds>(time - last_time).count();
+        std::chrono::duration<double> dt_ = time - last_time;
+        const double dt = 1.0;// dt_.count();
 
         current_state.position += current_state.velocity * dt + 0.5 * current_state.acceleration * dt * dt;
         current_state.velocity += current_state.acceleration * dt;
@@ -219,6 +220,7 @@ public: // methods ////////////////////////////////////////////////////////////
             //
             sigmas[2 * i + 1] = state + cov_sqrt.row(i);
             sigmas[2 * i + 2] = state + -cov_sqrt.row(i);
+            std::cout << state.velocity.transpose() << std::endl;
         }
 
         return sigmas;
@@ -247,7 +249,9 @@ public: // methods ////////////////////////////////////////////////////////////
         {
             new_state.position += mean_weight * sigma_point.position;
             new_state.velocity += mean_weight * sigma_point.velocity;
+            new_state.acceleration += mean_weight * sigma_point.acceleration;
             new_state.angular_vel += mean_weight * sigma_point.angular_vel;
+            new_state.angular_acc += mean_weight * sigma_point.angular_acc;
             new_state.acc_bias += mean_weight * sigma_point.acc_bias;
             new_state.gyro_bias += mean_weight * sigma_point.gyro_bias;
 
@@ -264,8 +268,10 @@ public: // methods ////////////////////////////////////////////////////////////
             Eigen::Matrix<double, NUM_STATES, 1> err;
             err.block<3, 1>(states::X, 0) = sigma_point.position - new_state.position;
             err.block<3, 1>(states::VX, 0) = sigma_point.velocity - new_state.velocity;
+            err.block<3, 1>(states::AX, 0) = sigma_point.acceleration - new_state.acceleration;
             err.block<3, 1>(states::RX, 0) = ln(sigma_point.orientation) - lie_mean;
             err.block<3, 1>(states::WX, 0) = sigma_point.angular_vel - new_state.angular_vel;
+            err.block<3, 1>(states::aX, 0) = sigma_point.angular_acc - new_state.angular_acc;
             err.block<3, 1>(states::AX_b, 0) = sigma_point.acc_bias - new_state.acc_bias;
             err.block<3, 1>(states::GX_b, 0) = sigma_point.gyro_bias - new_state.gyro_bias;
 

@@ -98,7 +98,7 @@ struct State
         Eigen::Vector3d lie_rotation(ln(orientation));
         new_state.position = position + lhs.block<3, 1>(states::X, 0);
         new_state.velocity = velocity + lhs.block<3, 1>(states::VX, 0);
-        new_state.velocity = acceleration + lhs.block<3, 1>(states::AX, 0);
+        new_state.acceleration = acceleration + lhs.block<3, 1>(states::AX, 0);
         new_state.orientation = exp(lie_rotation + lhs.block<3, 1>(states::RX, 0));
         new_state.angular_vel = angular_vel + lhs.block<3, 1>(states::WX, 0);
         new_state.angular_acc = angular_acc + lhs.block<3, 1>(states::aX, 0);
