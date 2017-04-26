@@ -13,46 +13,59 @@ namespace ukf
 
 //
 // Base class for all sensors, includes getters and setters for things and
-// all the thread saftey
+// all the thread safety.
 //
 class SensorBase
 {
-public: // types //////////////////////////////////////////////////////////////
+public: // Virtual Functions to Implemented ///////////////////////////////////
     //
-    // type returned when data is requested
+    // Given a set of predicted sigma points, return to the caller a predicted
+    // observation and covariance associated with that in the observation space
+    // along with a cross covariance between the state and observation space
     //
-    struct sensor_data_t
-    {
-        Timestamp timestamp;
-        Eigen::MatrixXd measurement;
-        Eigen::MatrixXd covariance;
-    };
+    virtual ObsCovCrossCov compute_observation(const SigmaPoints &points) const = 0;
 
-public: // destructor /////////////////////////////////////////////////////////
     //
+    // Needed for the kalman update, computes the error in two observations
     //
-    //
-    virtual ~SensorBase() {};
+    virtual Eigen::MatrixXd compute_innovation(const Eigen::MatrixXd &actual_observation,
+                                               const Eigen::MatrixXd &predicted_observation) const = 0;
 
 public: // methods ////////////////////////////////////////////////////////////
     //
     // when a new measurement comes in these functions can be called
-    // TODO: Thread safety
     //
     inline void update_measurment(const Eigen::MatrixXd &data)
+    {
+        update_measurment(data, Clock::now());
+    }
+
+    //
+    // A lot of times the covariance won't need to updated
+    // TODO: Thread safety
+    //
+    inline void update_measurment(const Eigen::MatrixXd &data, const Timestamp &time)
     {
         timestamp = Clock::now();
         measurement = data;
     }
 
     //
+    // In the cases you want to update with a new sensor covariance, this exists
+    //
+    inline void update_measurment(const Eigen::MatrixXd &data, const Eigen::MatrixXd &cov)
+    {
+        update_measurment(data, cov, Clock::now());
+    }
+
+    //
     // TODO: Thread safety
     //
-    inline void update_measurment(const Eigen::MatrixXd &data, const Eigen::MatrixXd &covariance_) 
+    inline void update_measurment(const Eigen::MatrixXd &data, const Eigen::MatrixXd &cov, const Timestamp &time)
     {
-        timestamp = Clock::now();
+        timestamp = time;
         measurement = data;
-        covariance = covariance_;
+        covariance = cov;
     }
 
 
@@ -81,83 +94,46 @@ private: // private members ///////////////////////////////////////////////////
     Eigen::MatrixXd measurement;
 
     //
-    // covariance associated with the measurment
+    // covariance associated with the measurement
     //
     Eigen::MatrixXd covariance;
 
 }; // class SensorBase
 
-//
-// Base class to be inherited by from classes that represent inertial sensors
-//
-class InertialSensor : public SensorBase
-{
-public: // destructor /////////////////////////////////////////////////////////
-    //
-    //
-    //
-    virtual ~InertialSensor() {};
-
-public: // Virtual Functions to Implemented ///////////////////////////////////
-    //
-    // Given an input state and a update dt, modify the state using data
-    // held by the sensor.
-    // Note: Some sensors may only implement one of these two functions
-    //
-    virtual void predict_state(State &state, double dt) = 0;
-
-}; // class InertialSensorBase
-
-//
-// Base class to be inherited by from classes that represent observation sensors
-//
-class ObservationSensor : public SensorBase
-{
-public: // destructor /////////////////////////////////////////////////////////
-    //
-    //
-    //
-    virtual ~ObservationSensor() {};
-
-public: // Virtual Functions to Implemented ///////////////////////////////////
-    //
-    // Given a state, use the current measurement data to transform the it
-    //
-    virtual void update_state(State &state) = 0;
-
-    //
-    // Convert the given state into an observation
-    //
-    virtual Eigen::MatrixXd convert_to_observation(State &state) = 0;
-
-}; // class ObservationSesnor
-
 ///////////////////////////////////////////////////////////////////////////////
 // sensor class definitions ///////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-class AccelerometerInertial final: public InertialSensor
+class Accelerometer final: public SensorBase
 {
 public: // constructor ///////////////////////////////////////////////////////
     //
     //
     //
-    AccelerometerInertial() = default;
+    Accelerometer() = default;
 
     //
     //
     //
-    ~AccelerometerInertial() = default;
+    ~Accelerometer() = default;
 
 public: // methods ///////////////////////////////////////////////////////////
-
-    void predict_state(State &state, double dt)
+    //
+    // Given a set of predicted sigma points, return to the caller a StateCovCrossCov type
+    //
+    ObsCovCrossCov compute_observation(const SigmaPoints &points) const
     {
-        sensor_data_t sensor_data = get_sensor_data();
-        std::cout << sensor_data.measurement.transpose();
-        std::cout << " at " << std::chrono::system_clock::to_time_t(sensor_data.timestamp) << std::endl;
-    }
+    };
 
-}; // class AccelerometerInertial
+    //
+    // Needed for the kalman update, computes the error in two observations
+    //
+    Eigen::MatrixXd compute_innovation(const Eigen::MatrixXd &actual_observation,
+                                       const Eigen::MatrixXd &predicted_observation) const
+    {
+
+    };
+
+}; // class Accelerometer
 
 } // namespace ukf

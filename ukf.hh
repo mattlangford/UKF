@@ -5,6 +5,7 @@
 
 #include "utils.hh"
 #include "types.hh"
+#include "sensors.hh"
 
 // TODO: Move function implementations over to the cc file
 
@@ -63,9 +64,8 @@ public: // constructor /////////////////////////////////////////////////////////
     // of inertial sensors, a list of observation sensors and some parameters used 
     // by the filter
     //
-    UKF(State initial_state, Covariance initial_covariance, ukf_params_t params_) :
-        state(initial_state),
-        covariance(initial_covariance),
+    UKF(const Sensors &sensors, const ukf_params_t &params_) :
+        sensors(sensors_),
         params(params_),
         last_time(Clock::now())
     {
@@ -74,80 +74,176 @@ public: // constructor /////////////////////////////////////////////////////////
 public: // methods /////////////////////////////////////////////////////////////
 
     //
-    // Main function for the ukf, call this and the filter will use it's most
-    // recent measurements to compute an estimated State and Covariance for you
+    // Main function for the ukf, call this and the filter will use the most
+    // recent measurements from all the given sensors to compute an estimated
+    // State and Covariance for you
     //
-    StateAndCovariance update(const Timestamp &time)
+    StateAndCovariance update(const StateAndCovariance in, const Timestamp &time)
     {
-        // time update
-        // observation update
+        //
+        // Compute sigmas points in the state space, they aren't really predicted sigma points
+        // yet, but they will be shortly
+        //
+        SigmaPoints predicted_sigma_pts = compute_sigma_points(in.state, in.covariance);
 
-        return StateAndCovariance();
+        //
+        // First do the time update
+        // TODO: Ideally, we'd do a time update between each sensor measurement in the loop below
+        //
+        const Timestamp update_time = Clock::now();
+        for(State &point : predicted_sigma_pts)
+        {
+            time_update_f(point, update_time);
+        }
+
+        //
+        // Save the update time for the next run
+        //
+        last_time = update_time;
+
+        //
+        // We need to compute an initial predicted state which will be corrected
+        // with each additional sensor measurement we have
+        //
+        StateAndCovariance predicted = state_from_sigma_points(predicted_sigma_pts);
+        State predicted_state = predicted.state;
+        Covariance predicted_cov = predicted.covariance + compute_model_covariance();
+
+        //
+        // Loop through each sensor and let it update the state how it wants
+        // TODO: This should be ordered based on the incoming time of each sensor
+        //
+        for (SensorPtr sensor : sensors)
+        {
+            //
+            // Fetch the latest sensor data so that any sensor updates don't break things
+            // halfway into the update
+            //
+            sensor_data_t latest_data = sensor->get_sensor_data();
+
+            //
+            // Convert our predicted states in the state space into a predicted observation
+            // (and covariance) in the observation space. Also compute the cross covariance
+            // for the predicted states and the observations
+            //
+            ObsCovCrossCov obs = sensor->compute_observation(predicted_sigma_pts);
+
+            //
+            // Let's compute the error in our actual observed measurement and our predicted
+            // observed measurement
+            // Dims: 1 x OBS_SPACE_DIM
+            //
+            Eigen::MatrixXd observation_innovation = sensor->compute_innovation(latest_data.measurement,
+                                                                                obs.observed_state);
+
+            //
+            // Add the sensor covariance in there
+            // Dims: OBS_SPACE_DIM x OBS_SPACE_DIM
+            //
+            obs.covariance += latest_data.covariance;
+
+            //
+            // Compute kalman gain: Pxy * Pyy^-1
+            // Dims: STATE_SPACE_DIM x OBS_SPACE_DIM
+            //
+            Eigen::MatrixXd kalman_gain = obs.cross_covariance * obs.covariance.inverse();
+
+            //
+            // Now time to update the actual state and covariance
+            //
+            predicted_state = predicted_state + kalman_gain * observation_innovation;
+            predicted_cov = predicted_cov - kalman_gain * obs.covariance * kalman_gain.transpose();
+            SigmaPoints predicted_sigma_pts = compute_sigma_points(predicted_state, predicted_cov);
+        }
+
+        //
+        // Return to the user the final state and covariance from the above loop
+        //
+        StateAndCovariance output;
+        output.state = predicted_state;
+        output.covariance = predicted_cov;
+        return output;
     }
 
-// temporarily public
+// temporarily public for testing
 public: // methods ////////////////////////////////////////////////////////////
 
     //
-    // Using the most recent inertial measurements, update our current estimate
-    // of the state.
+    // Update our current estimate of the state according to the update time
+    // This is assuming constant accelerations
+    // This function is passed to the UT during the time update
     //
-    StateAndCovariance time_update(const Timestamp &time)
+    void time_update_f(State& current_state, const Timestamp &time) const
     {
-        return StateAndCovariance();
-    }
-    //
-    // Intended to be called after a time_update. Using the most recent sensor
-    // measurements, compute a corrected state and covariance estimate. The output
-    // here could be published as the state estimate
-    //
-    StateAndCovariance observation_update()
-    {
-        return StateAndCovariance();
+        const double dt = std::chrono::duration_cast<std::chrono::milliseconds>(time - last_time).count();
+
+        current_state.position += current_state.velocity * dt + 0.5 * current_state.acceleration * dt * dt;
+        current_state.velocity += current_state.acceleration * dt;
+
+        // TODO: Orientation from angular velocity, also check if this is correct
+        current_state.angular_vel += current_state.angular_acc * dt;
     }
 
     //
-    // Does a UT on a state and covariance using some update function to produce
-    // a new state and covariance. Ideally this could be used to convert between
-    // state and observation space, but there will probably just be two
+    // Helper function that computes the model covariance. This is probably fine to hard code
+    // like this, since it will likely not change
+    // TODO: Ensure this is a sensible model covariance. All diagonal values may need to not 
+    // be the same...
     //
-    template <typename Func>
-    StateAndCovariance unscented_transform(const State &      initial_state, 
-                                           const Covariance & initial_covariance,
-                                           const Func         transition_f) const
+    Covariance compute_model_covariance() const
     {
+        return Covariance::Identity() * 1E-3;
+    }
+
+    //
+    // Compute sigma points from a given StateAndCovariance
+    //
+    SigmaPoints compute_sigma_points(const State &state,
+                                     const Covariance& covariance) const
+    {
+        //
         // Let's do the transform now (not really covariance type, but close enough)
-        Covariance cov_sqrt = initial_covariance.llt().matrixL();
+        //
+        Covariance cov_sqrt = covariance.llt().matrixL();
         cov_sqrt *= params.sqrt_cov_factor;
 
-        // populate sigma vector
+        //
+        // Populate sigma vector
+        //
         SigmaPoints sigmas(NUM_SIGMA_POINTS);
-        sigmas[0] = initial_state;
+        sigmas[0] = state;
         for (size_t i = 0; i < NUM_STATES; ++i)
         {
-            // since sigma[0] is taken, add one to the index
-            sigmas[2 * i + 1] = initial_state + cov_sqrt.row(i);
-            sigmas[2 * i + 2] = initial_state + -cov_sqrt.row(i);
+            //
+            // Since sigma[0] is taken, add one to the index
+            //
+            sigmas[2 * i + 1] = state + cov_sqrt.row(i);
+            sigmas[2 * i + 2] = state + -cov_sqrt.row(i);
         }
 
-        // this function takes a SigmaPoints vector and transforms each point
-        transition_f(sigmas);
-        std::cout << sigmas[0].position << std::endl;
+        return sigmas;
+    }
 
+    //
+    // Given a set of sigma points, compute an expected State and associated
+    // covariance
+    //
+    StateAndCovariance state_from_sigma_points(const SigmaPoints &points)
+    {
         //
         // TODO: Redo the rotation stuff using more operator overloading to make it cleaner
         //
         std::vector<Eigen::Matrix3d> rotations;
         rotations.reserve(NUM_SIGMA_POINTS);
-        for(const State& sigma : sigmas)
+        for(const State& sigma : points)
         {
-            rotations.push_back(sigma.orientation); 
+            rotations.push_back(sigma.orientation);
         }
 
         // Compute mean
         double mean_weight = params.mean_weight.first;
         State new_state;
-        for (const State& sigma_point : sigmas)
+        for (const State& sigma_point : points)
         {
             new_state.position += mean_weight * sigma_point.position;
             new_state.velocity += mean_weight * sigma_point.velocity;
@@ -163,7 +259,7 @@ public: // methods ////////////////////////////////////////////////////////////
         // Compute covariance
         double cov_weight = params.cov_weight.first;
         Covariance new_covariance = Covariance::Zero();
-        for (const State& sigma_point : sigmas)
+        for (const State& sigma_point : points)
         {
             Eigen::Matrix<double, NUM_STATES, 1> err;
             err.block<3, 1>(states::X, 0) = sigma_point.position - new_state.position;
@@ -182,10 +278,11 @@ public: // methods ////////////////////////////////////////////////////////////
         s_c.covariance = new_covariance;
 
         return s_c;
+
     }
 
     //
-    // compute the average of a set of rotation matrices
+    // Compute the average of a set of rotation matrices
     //
     Eigen::Vector3d average_rotations(std::vector<Eigen::Matrix3d> rots) const
     {
@@ -198,15 +295,18 @@ public: // methods ////////////////////////////////////////////////////////////
             Eigen::Matrix3d u_inv = u.inverse();
             cov = Eigen::Matrix3d::Zero();
 
-            // build the v matrix
+            //
+            // Build the v matrix
+            //
             for (size_t i = 0; i < rots.size(); ++i)
             {
                 v.col(i) = ln(rots[i] * u_inv);
             }
 
-            // compute covariance and mean
+            //
+            // Compute covariance and mean
+            //
             Eigen::Vector3d tangent_space_avg = Eigen::Vector3d::Zero();
-            const double average_factor = 1.0 / rots.size();
             for (size_t i = 0; i < rots.size(); ++i)
             {
                 double cov_weight = params.cov_weight.second;
@@ -217,34 +317,28 @@ public: // methods ////////////////////////////////////////////////////////////
                 if (i == 0)
                     cov_weight = params.mean_weight.first;
 
-                cov += average_factor * cov_weight * v.col(i) * v.col(i).transpose();
+                cov += cov_weight * v.col(i) * v.col(i).transpose();
                 tangent_space_avg += mean_weight * v.col(i);
             }
-            u = exp(tangent_space_avg) * u; 
+            u = exp(tangent_space_avg) * u;
         }
         return ln(u);
     }
 
 private: // members ////////////////////////////////////////////////////////////
+    //
+    // List of the sensors in our filter.
+    // This can go in the update function call
+    //
+    Sensors sensors;
 
     //
-    // current state
-    //
-    State state;
-
-    //
-    // current covariance of the states
-    //
-    Covariance covariance;
-
-    //
-    // some precomputed parameters for the UT
+    // Some precomputed parameters for the UT
     //
     ukf_params_t params;
 
     //
-    // used to compute dt for updates, this may not work if some sensors take long
-    // to process
+    // Used to compute dt for updates
     //
     Timestamp last_time;
 

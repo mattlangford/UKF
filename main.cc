@@ -18,13 +18,6 @@ using namespace ukf;
 
 int main()
 {
-    Eigen::Vector3d acceleration(0, 0, 1);
-
-    AccelerometerInertial acc;
-    acc.update_measurment(acceleration);
-
-    State initial_state;
-    acc.predict_state(initial_state, 0.1);
 
 
     // ukf_params_t params;
