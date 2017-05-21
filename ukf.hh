@@ -11,47 +11,6 @@
 
 namespace ukf
 {
-
-//
-// Parameters needed to do the UT, a lot of these are pre-calculated in order
-// to save compute time later on
-//
-struct ukf_params_t
-{
-    // Could be better with some const
-    ukf_params_t(double alpha_=1E-2, double beta_=2, double kappa_=0)
-    {
-        alpha = alpha_;
-        beta = beta_;
-        kappa = kappa_;
-        lambda = alpha * alpha * (states::NUM_STATES + kappa) - states::NUM_STATES;
-
-        mean_weight.first = lambda / (states::NUM_STATES + lambda);
-        mean_weight.second = 0.5 / (states::NUM_STATES + lambda);
-
-        cov_weight.first = mean_weight.first + (1 - alpha * alpha + beta);
-        cov_weight.second = mean_weight.second;
-
-        sqrt_cov_factor = sqrtf(states::NUM_STATES + lambda);
-    };
-
-    // normal parameters
-    double alpha;
-    double beta;
-    double kappa;
-    double lambda;
-
-    // weights for computing sigma points, the first element should be the weight
-    // of the 0th sigma point and the other weights are applied to the rest
-    std::pair<double, double> mean_weight;
-    std::pair<double, double> cov_weight;
-
-    // the factor multiplied by the square root of the covariance matrix before
-    // each UT
-    double sqrt_cov_factor;
-};
-
-
 //
 // The main event
 //
@@ -126,7 +85,7 @@ public: // methods /////////////////////////////////////////////////////////////
             // (and covariance) in the observation space. Also compute the cross covariance
             // for the predicted states and the observations
             //
-            ObsCovCrossCov obs = sensor->compute_observation(predicted_sigma_pts);
+            ObsCovCrossCov obs = sensor->compute_observation(predicted_sigma_pts, predicted_state, params);
 
             //
             // Let's compute the error in our actual observed measurement and our predicted
@@ -258,24 +217,15 @@ public: // methods ////////////////////////////////////////////////////////////
             mean_weight = params.mean_weight.second;
         }
         Eigen::Vector3d lie_mean = average_rotations(rotations);
-        new_state.orientation = exp(lie_mean);
+        new_state.orientation = exp_r(lie_mean);
 
         // Compute covariance
         double cov_weight = params.cov_weight.first;
         Covariance new_covariance = Covariance::Zero();
         for (const State& sigma_point : points)
         {
-            Eigen::Matrix<double, NUM_STATES, 1> err;
-            err.block<3, 1>(states::X, 0) = sigma_point.position - new_state.position;
-            err.block<3, 1>(states::VX, 0) = sigma_point.velocity - new_state.velocity;
-            err.block<3, 1>(states::AX, 0) = sigma_point.acceleration - new_state.acceleration;
-            err.block<3, 1>(states::RX, 0) = ln(sigma_point.orientation) - lie_mean;
-            err.block<3, 1>(states::WX, 0) = sigma_point.angular_vel - new_state.angular_vel;
-            err.block<3, 1>(states::aX, 0) = sigma_point.angular_acc - new_state.angular_acc;
-            err.block<3, 1>(states::AX_b, 0) = sigma_point.acc_bias - new_state.acc_bias;
-            err.block<3, 1>(states::GX_b, 0) = sigma_point.gyro_bias - new_state.gyro_bias;
-
-            new_covariance += cov_weight * err * err.transpose();
+            Eigen::Matrix<double, NUM_STATES, 1> innovation = sigma_point - new_state;
+            new_covariance += cov_weight * innovation * innovation.transpose();
             cov_weight = params.cov_weight.second;
         }
 
@@ -306,7 +256,7 @@ public: // methods ////////////////////////////////////////////////////////////
             //
             for (size_t i = 0; i < rots.size(); ++i)
             {
-                v.col(i) = ln(rots[i] * u_inv);
+                v.col(i) = ln_r(rots[i] * u_inv);
             }
 
             //
@@ -326,9 +276,9 @@ public: // methods ////////////////////////////////////////////////////////////
                 cov += cov_weight * v.col(i) * v.col(i).transpose();
                 tangent_space_avg += mean_weight * v.col(i);
             }
-            u = exp(tangent_space_avg) * u;
+            u = exp_r(tangent_space_avg) * u;
         }
-        return ln(u);
+        return ln_r(u);
     }
 
 private: // members ////////////////////////////////////////////////////////////

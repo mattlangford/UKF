@@ -91,21 +91,45 @@ struct State
         gyro_bias = Eigen::Vector3d::Zero();
     }
 
+    //
     // makes the sigma point transformation pretty easy
-    State operator+(const Eigen::Matrix<double, states::NUM_STATES, 1>& lhs) const
+    //
+    State operator+(const Eigen::Matrix<double, states::NUM_STATES, 1>& rhs) const
     {
         State new_state;
-        Eigen::Vector3d lie_rotation(ln(orientation));
-        new_state.position = position + lhs.block<3, 1>(states::X, 0);
-        new_state.velocity = velocity + lhs.block<3, 1>(states::VX, 0);
-        new_state.acceleration = acceleration + lhs.block<3, 1>(states::AX, 0);
-        new_state.orientation = exp(lie_rotation + lhs.block<3, 1>(states::RX, 0));
-        new_state.angular_vel = angular_vel + lhs.block<3, 1>(states::WX, 0);
-        new_state.angular_acc = angular_acc + lhs.block<3, 1>(states::aX, 0);
-        new_state.acc_bias = acc_bias + lhs.block<3, 1>(states::AX_b, 0);
-        new_state.gyro_bias = gyro_bias + lhs.block<3, 1>(states::GX_b, 0);
+        Eigen::Vector3d lie_rotation(ln_r(orientation));
+
+        new_state.position = position + rhs.block<3, 1>(states::X, 0);
+        new_state.velocity = velocity + rhs.block<3, 1>(states::VX, 0);
+        new_state.acceleration = acceleration + rhs.block<3, 1>(states::AX, 0);
+        new_state.orientation = exp_r(lie_rotation + rhs.block<3, 1>(states::RX, 0));
+        new_state.angular_vel = angular_vel + rhs.block<3, 1>(states::WX, 0);
+        new_state.angular_acc = angular_acc + rhs.block<3, 1>(states::aX, 0);
+        new_state.acc_bias = acc_bias + rhs.block<3, 1>(states::AX_b, 0);
+        new_state.gyro_bias = gyro_bias + rhs.block<3, 1>(states::GX_b, 0);
 
         return new_state;
+    };
+
+    //
+    // makes innovation computation easy
+    //
+    Eigen::Matrix<double, states::NUM_STATES, 1> operator-(const State &rhs) const
+    {
+        Eigen::Matrix<double, states::NUM_STATES, 1> state_vector;
+        Eigen::Vector3d lie_rotation(ln_r(orientation));
+        Eigen::Vector3d rhs_lie_rotation(ln_r(rhs.orientation));
+
+        state_vector.block<3, 1>(states::X, 0) = position - rhs.position;
+        state_vector.block<3, 1>(states::VX, 0) = velocity - rhs.velocity;
+        state_vector.block<3, 1>(states::AX, 0) = acceleration - rhs.acceleration;
+        state_vector.block<3, 1>(states::RX, 0) = lie_rotation - rhs_lie_rotation;
+        state_vector.block<3, 1>(states::WX, 0) = angular_vel - rhs.angular_vel;
+        state_vector.block<3, 1>(states::aX, 0) = angular_acc - rhs.angular_acc;
+        state_vector.block<3, 1>(states::AX_b, 0) = acc_bias - rhs.acc_bias;
+        state_vector.block<3, 1>(states::GX_b, 0) = gyro_bias - rhs.gyro_bias;
+
+        return state_vector;
     };
 
     void print() const
@@ -182,5 +206,45 @@ struct sensor_data_t
     Eigen::MatrixXd measurement;
     Eigen::MatrixXd covariance;
 };
+
+//
+// Parameters needed to do the UT, a lot of these are pre-calculated in order
+// to save compute time later on
+//
+struct ukf_params_t
+{
+    // Could be better with some const
+    ukf_params_t(double alpha_=1E-2, double beta_=2, double kappa_=0)
+    {
+        alpha = alpha_;
+        beta = beta_;
+        kappa = kappa_;
+        lambda = alpha * alpha * (states::NUM_STATES + kappa) - states::NUM_STATES;
+
+        mean_weight.first = lambda / (states::NUM_STATES + lambda);
+        mean_weight.second = 0.5 / (states::NUM_STATES + lambda);
+
+        cov_weight.first = mean_weight.first + (1 - alpha * alpha + beta);
+        cov_weight.second = mean_weight.second;
+
+        sqrt_cov_factor = sqrtf(states::NUM_STATES + lambda);
+    };
+
+    // normal parameters
+    double alpha;
+    double beta;
+    double kappa;
+    double lambda;
+
+    // weights for computing sigma points, the first element should be the weight
+    // of the 0th sigma point and the other weights are applied to the rest
+    std::pair<double, double> mean_weight;
+    std::pair<double, double> cov_weight;
+
+    // the factor multiplied by the square root of the covariance matrix before
+    // each UT
+    double sqrt_cov_factor;
+};
+
 
 }  // namespace

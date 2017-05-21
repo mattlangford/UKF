@@ -10,20 +10,27 @@ namespace ukf
 // base class definitions /////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-
 //
 // Base class for all sensors, includes getters and setters for things and
 // all the thread safety.
 //
 class SensorBase
 {
+public: // Destructor /////////////////////////////////////////////////////////
+    //
+    //
+    //
+    virtual ~SensorBase() = 0;
+
 public: // Virtual Functions to Implemented ///////////////////////////////////
     //
     // Given a set of predicted sigma points, return to the caller a predicted
     // observation and covariance associated with that in the observation space
     // along with a cross covariance between the state and observation space
     //
-    virtual ObsCovCrossCov compute_observation(const SigmaPoints &points) const = 0;
+    virtual ObsCovCrossCov compute_observation(const SigmaPoints &points,
+                                               const State &predicted_state,
+                                               const ukf_params_t &params) const = 0;
 
     //
     // Needed for the kalman update, computes the error in two observations
@@ -106,6 +113,24 @@ private: // private members ///////////////////////////////////////////////////
 
 class Accelerometer final: public SensorBase
 {
+
+//
+// The accelerometer uses it's measurements to update the AX, AY, and AZ states
+// along with the biases associated with each of those.
+// Eventually it will also play a roll in RX, and RY as well - soon.
+//
+// Below is an enum for milling around in the observation vector
+//
+enum obs_space : uint8_t
+{
+    ax,
+    ay,
+    az,
+
+    OBS_SPACE_DIM
+
+};
+
 public: // constructor ///////////////////////////////////////////////////////
     //
     //
@@ -121,8 +146,71 @@ public: // methods ///////////////////////////////////////////////////////////
     //
     // Given a set of predicted sigma points, return to the caller a StateCovCrossCov type
     //
-    ObsCovCrossCov compute_observation(const SigmaPoints &points) const
+    ObsCovCrossCov compute_observation(const SigmaPoints &points,
+                                       const State &predicted_state,
+                                       const ukf_params_t &params) const
     {
+        // Loop through each sigma point and compute the expected observation we'd expect
+        // to see for that state
+        Eigen::MatrixXd expected_observations = Eigen::MatrixXd::Zero(OBS_SPACE_DIM, points.size());
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            const State &state = points[i];
+            expected_observations.col(i) = state.acceleration;
+        }
+
+        //
+        // Compute the output type, these three steps could be done together to be faster
+        //
+        ObsCovCrossCov output;
+
+        //
+        // Compute the weighted mean of those measurements
+        //
+        double mean_weight = params.mean_weight.first;
+        output.observed_state = Eigen::Matrix<double, OBS_SPACE_DIM, 1>::Zero();
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &observation = expected_observations.col(i);
+            output.observed_state += mean_weight * observation;
+
+            mean_weight = params.mean_weight.second;
+        }
+
+        //
+        // Compute the weighted covariance of those measurements
+        //
+        double cov_weight = params.cov_weight.first;
+        output.covariance = Eigen::Matrix<double, OBS_SPACE_DIM, OBS_SPACE_DIM>::Zero();
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &innovation =
+                expected_observations.col(i) - output.observed_state;
+
+            output.covariance += cov_weight * innovation * innovation.transpose();
+
+            cov_weight = params.cov_weight.second;
+        }
+
+        //
+        // Compute the weighted cross covariance of the states and measurements
+        //
+        cov_weight = params.cov_weight.first;
+        output.cross_covariance = Eigen::Matrix<double, states::NUM_STATES, OBS_SPACE_DIM>::Zero();
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            const Eigen::Matrix<double, states::NUM_STATES, 1> &state_innovation =
+                points[i] - predicted_state;
+
+            const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &obs_innovation =
+                expected_observations.col(i) - output.observed_state;
+
+            output.covariance += cov_weight * state_innovation * obs_innovation.transpose();
+
+            cov_weight = params.cov_weight.second;
+        }
+
+        return output;
     };
 
     //
@@ -131,7 +219,7 @@ public: // methods ///////////////////////////////////////////////////////////
     Eigen::MatrixXd compute_innovation(const Eigen::MatrixXd &actual_observation,
                                        const Eigen::MatrixXd &predicted_observation) const
     {
-
+        return actual_observation - predicted_observation;
     };
 
 }; // class Accelerometer

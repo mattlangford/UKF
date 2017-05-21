@@ -16,33 +16,6 @@ using namespace ukf;
 //     }
 // }
 
-Eigen::Quaterniond exp_q(const Eigen::Vector3d &w)
-{
-    double theta = w.norm();
-    if (theta < 1E-6)
-    {
-        return {1.0, 0.0, 0.0, 0.0};
-    }
-
-    Eigen::Quaterniond result;
-    result.w() = cos(theta / 2.0);
-    result.vec() = w * sin(theta / 2.0) / theta;
-    return result;
-}
-
-Eigen::Vector3d ln_q(const Eigen::Quaterniond &q)
-{
-    Eigen::Vector3d result;
-    double theta = acos(q.w());
-
-    if (theta < 1E-6)
-    {
-        return {0.0, 0.0, 0.0};
-    }
-
-    return 2 * q.vec() * theta / sin(theta);
-}
-
 Eigen::Quaterniond average(const Eigen::Quaterniond &lhs, const Eigen::Quaterniond &rhs)
 {
     //

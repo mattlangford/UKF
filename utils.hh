@@ -5,7 +5,7 @@
 // Multiplication between two quaternions (which results in another quaternion)
 // This is overloaded for any file that includes this header (that may change?)
 //
-Eigen::Quaterniond operator*(const Eigen::Quaterniond &rhs, 
+Eigen::Quaterniond operator*(const Eigen::Quaterniond &rhs,
                              const Eigen::Quaterniond &lhs )
 {
     const double w = rhs.w() * lhs.w() - rhs.x() * lhs.x() - rhs.y() * lhs.y() - rhs.z() * lhs.z();
@@ -20,7 +20,7 @@ Eigen::Quaterniond operator*(const Eigen::Quaterniond &rhs,
 // Helper function to rotate a Vector by a Quaternion, the vector can be any magnitude
 // and will be returned with the same magnitude it was passed in with
 //
-Eigen::Vector3d rotate_vec_by_quat(const Eigen::Vector3d & vector, 
+Eigen::Vector3d rotate_vec_by_quat(const Eigen::Vector3d & vector,
                                    const Eigen::Quaterniond &quat)
 {
     const Eigen::Quaterniond quat_conj(quat.w(), -quat.x(), -quat.y(), -quat.z());
@@ -34,12 +34,12 @@ Eigen::Vector3d rotate_vec_by_quat(const Eigen::Vector3d & vector,
 }
 
 //
-// These functions operate on rotation matricies
+// These functions operate on rotation matrices
 //
 // Computes the mapping from R3 -> SO3
 // Basically from the tangent space of one rotation to another rotation
 //
-Eigen::Matrix3d exp(const Eigen::Vector3d &w)
+Eigen::Matrix3d exp_r(const Eigen::Vector3d &w)
 {
     // skew symmetric matrix forming the Lie Algebra
     Eigen::Matrix3d w_x;
@@ -60,17 +60,44 @@ Eigen::Matrix3d exp(const Eigen::Vector3d &w)
     return Eigen::Matrix3d::Identity(3, 3) + second_term + third_term;
 }
 
-// 
+//
 // Goes the other way, SO3 -> R3 tangent space
 //
-Eigen::Vector3d ln(const Eigen::Matrix3d &R)
+Eigen::Vector3d ln_r(const Eigen::Matrix3d &R)
 {
     const double theta = acos((R.trace() - 1) / 2.0);
     const double factor = (0.5 + (theta * theta) / 12.0 + (7 * pow(theta, 4)) / 720.0);
-    // std::cout << "theta " << theta << std::endl; 
-    // std::cout << "factor " << factor << std::endl; 
 
     Eigen::Matrix3d out_mat = factor * (R - R.transpose());
     return {out_mat(2, 1), -out_mat(2, 0), out_mat(1, 0)};
 }
 
+//
+// These functions operate on Quaternions, same as the ones above
+//
+Eigen::Quaterniond exp_q(const Eigen::Vector3d &w)
+{
+    double theta = w.norm();
+    if (theta < 1E-6)
+    {
+        return {1.0, 0.0, 0.0, 0.0};
+    }
+
+    Eigen::Quaterniond result;
+    result.w() = cos(theta / 2.0);
+    result.vec() = w * sin(theta / 2.0) / theta;
+    return result;
+}
+
+Eigen::Vector3d ln_q(const Eigen::Quaterniond &q)
+{
+    Eigen::Vector3d result;
+    double theta = acos(q.w());
+
+    if (theta < 1E-6)
+    {
+        return {0.0, 0.0, 0.0};
+    }
+
+    return 2 * q.vec() * theta / sin(theta);
+}
