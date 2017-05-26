@@ -168,13 +168,14 @@ struct StateAndCovariance
 };
 
 //
-// Struct used by sensors in the UKF for the measurement update step
+// Struct used by sensors in the UKF for the measurement update step.
+// All fields here are in the observation space (except cross_covariance)
 //
 struct ObsCovCrossCov
 {
-    Eigen::MatrixXd   observed_state;
-    Eigen::MatrixXd   covariance;
-    Eigen::MatrixXd   cross_covariance;
+    Eigen::MatrixXd mean; // OBS_DIMS x 1
+    Eigen::MatrixXd covariance; // OBS_DIMS x OBS_DIMS
+    Eigen::MatrixXd cross_covariance; // STATE_DIMS x OBS_DIMS
 };
 
 //

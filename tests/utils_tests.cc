@@ -2,11 +2,11 @@
 #include <iostream>
 #include <assert.h>
 
-#include "utils.hh"
+#include "../utils.hh"
 
 //
 // File used for testing the utility functions
-// TODO: Make into actual unti tests
+// TODO: Make into actual unit tests
 //
 
 bool is_close(const Eigen::Vector3d & a, const Eigen::Vector3d & b, double atol=1E-4)

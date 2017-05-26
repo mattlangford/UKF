@@ -85,7 +85,8 @@ public: // methods /////////////////////////////////////////////////////////////
             // (and covariance) in the observation space. Also compute the cross covariance
             // for the predicted states and the observations
             //
-            ObsCovCrossCov obs = sensor->compute_observation(predicted_sigma_pts, predicted_state, params);
+            ObsCovCrossCov observation_data =
+                sensor->compute_observation(predicted_sigma_pts, predicted_state, params);
 
             //
             // Let's compute the error in our actual observed measurement and our predicted
@@ -93,25 +94,25 @@ public: // methods /////////////////////////////////////////////////////////////
             // Dims: 1 x OBS_SPACE_DIM
             //
             Eigen::MatrixXd observation_innovation = sensor->compute_innovation(latest_data.measurement,
-                                                                                obs.observed_state);
+                                                                                observation_data.mean);
 
             //
             // Add the sensor covariance in there
             // Dims: OBS_SPACE_DIM x OBS_SPACE_DIM
             //
-            obs.covariance += latest_data.covariance;
+            observation_data.covariance += latest_data.covariance;
 
             //
             // Compute kalman gain: Pxy * Pyy^-1
             // Dims: STATE_SPACE_DIM x OBS_SPACE_DIM
             //
-            Eigen::MatrixXd kalman_gain = obs.cross_covariance * obs.covariance.inverse();
+            Eigen::MatrixXd kalman_gain = observation_data.cross_covariance * observation_data.covariance.inverse();
 
             //
             // Now time to update the actual state and covariance
             //
             predicted_state = predicted_state + kalman_gain * observation_innovation;
-            predicted_cov = predicted_cov - kalman_gain * obs.covariance * kalman_gain.transpose();
+            predicted_cov = predicted_cov - kalman_gain * observation_data.covariance * kalman_gain.transpose();
             SigmaPoints predicted_sigma_pts = compute_sigma_points(predicted_state, predicted_cov);
         }
 

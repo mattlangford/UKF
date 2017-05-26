@@ -20,7 +20,7 @@ public: // Destructor /////////////////////////////////////////////////////////
     //
     //
     //
-    virtual ~SensorBase() = 0;
+    virtual ~SensorBase() {};
 
 public: // Virtual Functions to Implemented ///////////////////////////////////
     //
@@ -128,7 +128,6 @@ enum obs_space : uint8_t
     az,
 
     OBS_SPACE_DIM
-
 };
 
 public: // constructor ///////////////////////////////////////////////////////
@@ -160,21 +159,20 @@ public: // methods ///////////////////////////////////////////////////////////
         }
 
         //
-        // Compute the output type, these three steps could be done together to be faster
+        // Compute the output type, these three steps could be done together to be faster.
+        // Also it is left to be as general as possible to allow more complex stuff
         //
         ObsCovCrossCov output;
 
         //
         // Compute the weighted mean of those measurements
         //
-        double mean_weight = params.mean_weight.first;
-        output.observed_state = Eigen::Matrix<double, OBS_SPACE_DIM, 1>::Zero();
-        for (size_t i = 0; i < points.size(); ++i)
+        output.mean = expected_observations.col(0) * params.mean_weight.first;
+        double mean_weight = params.mean_weight.second;
+        for (size_t i = 1; i < expected_observations.cols(); ++i)
         {
             const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &observation = expected_observations.col(i);
-            output.observed_state += mean_weight * observation;
-
-            mean_weight = params.mean_weight.second;
+            output.mean += mean_weight * observation;
         }
 
         //
@@ -182,10 +180,10 @@ public: // methods ///////////////////////////////////////////////////////////
         //
         double cov_weight = params.cov_weight.first;
         output.covariance = Eigen::Matrix<double, OBS_SPACE_DIM, OBS_SPACE_DIM>::Zero();
-        for (size_t i = 0; i < points.size(); ++i)
+        for (size_t i = 0; i < expected_observations.cols(); ++i)
         {
             const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &innovation =
-                expected_observations.col(i) - output.observed_state;
+                expected_observations.col(i) - output.mean;
 
             output.covariance += cov_weight * innovation * innovation.transpose();
 
@@ -197,13 +195,13 @@ public: // methods ///////////////////////////////////////////////////////////
         //
         cov_weight = params.cov_weight.first;
         output.cross_covariance = Eigen::Matrix<double, states::NUM_STATES, OBS_SPACE_DIM>::Zero();
-        for (size_t i = 0; i < points.size(); ++i)
+        for (size_t i = 0; i < expected_observations.cols(); ++i)
         {
             const Eigen::Matrix<double, states::NUM_STATES, 1> &state_innovation =
                 points[i] - predicted_state;
 
             const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &obs_innovation =
-                expected_observations.col(i) - output.observed_state;
+                expected_observations.col(i) - output.mean;
 
             output.covariance += cov_weight * state_innovation * obs_innovation.transpose();
 
