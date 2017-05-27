@@ -2,6 +2,7 @@
 #include <Eigen/Dense>
 
 #include "types.hh"
+#include "utils.hh"
 
 namespace ukf
 {
@@ -29,8 +30,7 @@ public: // Virtual Functions to Implemented ///////////////////////////////////
     // along with a cross covariance between the state and observation space
     //
     virtual ObsCovCrossCov compute_observation(const SigmaPoints &points,
-                                               const State &predicted_state,
-                                               const ukf_params_t &params) const = 0;
+                                               const State &predicted_state) const = 0;
 
     //
     // Needed for the kalman update, computes the error in two observations
@@ -146,8 +146,7 @@ public: // methods ///////////////////////////////////////////////////////////
     // Given a set of predicted sigma points, return to the caller a ObsCovCrossCov type
     //
     ObsCovCrossCov compute_observation(const SigmaPoints &points,
-                                       const State &predicted_state,
-                                       const ukf_params_t &params) const
+                                       const State &predicted_state) const
     {
         // Loop through each sigma point and compute the expected observation we'd expect
         // to see for that state
@@ -167,8 +166,8 @@ public: // methods ///////////////////////////////////////////////////////////
         //
         // Compute the weighted mean of those measurements
         //
-        output.mean = expected_observations.col(0) * params.mean_weight.first;
-        double mean_weight = params.mean_weight.second;
+        output.mean = expected_observations.col(0) * params::mean_weights.first;
+        double mean_weight = params::mean_weights.second;
         for (size_t i = 1; i < expected_observations.cols(); ++i)
         {
             const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &observation = expected_observations.col(i);
@@ -178,7 +177,7 @@ public: // methods ///////////////////////////////////////////////////////////
         //
         // Compute the weighted covariance of those measurements
         //
-        double cov_weight = params.cov_weight.first;
+        double cov_weight = params::cov_weights.first;
         output.covariance = Eigen::Matrix<double, OBS_SPACE_DIM, OBS_SPACE_DIM>::Zero();
         for (size_t i = 0; i < expected_observations.cols(); ++i)
         {
@@ -187,13 +186,13 @@ public: // methods ///////////////////////////////////////////////////////////
 
             output.covariance += cov_weight * innovation * innovation.transpose();
 
-            cov_weight = params.cov_weight.second;
+            cov_weight = params::cov_weights.second;
         }
 
         //
         // Compute the weighted cross covariance of the states and measurements
         //
-        cov_weight = params.cov_weight.first;
+        cov_weight = params::cov_weights.first;
         output.cross_covariance = Eigen::Matrix<double, states::NUM_STATES, OBS_SPACE_DIM>::Zero();
         for (size_t i = 0; i < expected_observations.cols(); ++i)
         {
@@ -205,7 +204,7 @@ public: // methods ///////////////////////////////////////////////////////////
 
             output.covariance += cov_weight * state_innovation * obs_innovation.transpose();
 
-            cov_weight = params.cov_weight.second;
+            cov_weight = params::cov_weights.second;
         }
 
         return output;
@@ -257,8 +256,7 @@ public: // methods ///////////////////////////////////////////////////////////
     // Given a set of predicted sigma points, return to the caller a ObsCovCrossCov type
     //
     ObsCovCrossCov compute_observation(const SigmaPoints &points,
-                                       const State &predicted_state,
-                                       const ukf_params_t &params) const
+                                       const State &predicted_state) const
     {
         // Loop through each sigma point and compute the expected observation we'd expect
         // to see for that state
@@ -278,8 +276,8 @@ public: // methods ///////////////////////////////////////////////////////////
         //
         // Compute the weighted mean of those measurements
         //
-        output.mean = expected_observations.col(0) * params.mean_weight.first;
-        double mean_weight = params.mean_weight.second;
+        output.mean = expected_observations.col(0) * params::mean_weights.first;
+        double mean_weight = params::mean_weights.second;
         for (size_t i = 1; i < expected_observations.cols(); ++i)
         {
             const Eigen::Matrix<double, OBS_SPACE_DIM, 1> &observation = expected_observations.col(i);
@@ -289,7 +287,7 @@ public: // methods ///////////////////////////////////////////////////////////
         //
         // Compute the weighted covariance of those measurements
         //
-        double cov_weight = params.cov_weight.first;
+        double cov_weight = params::cov_weights.first;
         output.covariance = Eigen::Matrix<double, OBS_SPACE_DIM, OBS_SPACE_DIM>::Zero();
         for (size_t i = 0; i < expected_observations.cols(); ++i)
         {
@@ -298,13 +296,13 @@ public: // methods ///////////////////////////////////////////////////////////
 
             output.covariance += cov_weight * innovation * innovation.transpose();
 
-            cov_weight = params.cov_weight.second;
+            cov_weight = params::cov_weights.second;
         }
 
         //
         // Compute the weighted cross covariance of the states and measurements
         //
-        cov_weight = params.cov_weight.first;
+        cov_weight = params::cov_weights.first;
         output.cross_covariance = Eigen::Matrix<double, states::NUM_STATES, OBS_SPACE_DIM>::Zero();
         for (size_t i = 0; i < expected_observations.cols(); ++i)
         {
@@ -316,7 +314,7 @@ public: // methods ///////////////////////////////////////////////////////////
 
             output.covariance += cov_weight * state_innovation * obs_innovation.transpose();
 
-            cov_weight = params.cov_weight.second;
+            cov_weight = params::cov_weights.second;
         }
 
         return output;

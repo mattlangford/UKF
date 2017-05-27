@@ -4,13 +4,16 @@ project(UKF)
 set(CMAKE_CXX_STANDARD 11)
 
 add_library(ukf ukf.cc)
+add_library(types types.cc)
+add_library(utils utils.cc)
 
 find_package(Eigen3 REQUIRED)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-add_executable(run_filter main.cc)
-target_link_libraries(run_filter ukf)
-
-add_executable(run_tests tests/utils_tests.cc)
+# add_executable(run_filter main.cc)
+# target_link_libraries(run_filter ukf types)
+# 
+# add_executable(run_tests tests/utils_tests.cc)
 
 add_executable(run_sensor_tests tests/sensor_tests.cc)
+target_link_libraries(run_sensor_tests types utils)

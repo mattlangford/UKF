@@ -141,7 +141,7 @@ public: // methods ////////////////////////////////////////////////////////////
         current_state.position += current_state.velocity * dt + 0.5 * current_state.acceleration * dt * dt;
         current_state.velocity += current_state.acceleration * dt;
 
-        // TODO: Orientation from angular velocity, also check if this is correct
+        current_state.orientation = exp_q(current_state.angular_vel) * current_state.orientation;
         current_state.angular_vel += current_state.angular_acc * dt;
     }
 
@@ -184,102 +184,6 @@ public: // methods ////////////////////////////////////////////////////////////
         }
 
         return sigmas;
-    }
-
-    //
-    // Given a set of sigma points, compute an expected State and associated
-    // covariance
-    //
-    StateAndCovariance state_from_sigma_points(const SigmaPoints &points)
-    {
-        //
-        // TODO: Redo the rotation stuff using more operator overloading to make it cleaner
-        //
-        std::vector<Eigen::Matrix3d> rotations;
-        rotations.reserve(NUM_SIGMA_POINTS);
-        for(const State& sigma : points)
-        {
-            rotations.push_back(sigma.orientation);
-        }
-
-        // Compute mean
-        double mean_weight = params.mean_weight.first;
-        State new_state;
-        for (const State& sigma_point : points)
-        {
-            new_state.position += mean_weight * sigma_point.position;
-            new_state.velocity += mean_weight * sigma_point.velocity;
-            new_state.acceleration += mean_weight * sigma_point.acceleration;
-            new_state.angular_vel += mean_weight * sigma_point.angular_vel;
-            new_state.angular_acc += mean_weight * sigma_point.angular_acc;
-            new_state.acc_bias += mean_weight * sigma_point.acc_bias;
-            new_state.gyro_bias += mean_weight * sigma_point.gyro_bias;
-
-            mean_weight = params.mean_weight.second;
-        }
-        Eigen::Vector3d lie_mean = average_rotations(rotations);
-        new_state.orientation = exp_r(lie_mean);
-
-        // Compute covariance
-        double cov_weight = params.cov_weight.first;
-        Covariance new_covariance = Covariance::Zero();
-        for (const State& sigma_point : points)
-        {
-            Eigen::Matrix<double, NUM_STATES, 1> innovation = sigma_point - new_state;
-            new_covariance += cov_weight * innovation * innovation.transpose();
-            cov_weight = params.cov_weight.second;
-        }
-
-        StateAndCovariance s_c;
-        s_c.state = new_state;
-        s_c.covariance = new_covariance;
-
-        return s_c;
-
-    }
-
-    //
-    // Compute the average of a set of rotation matrices
-    //
-    Eigen::Vector3d average_rotations(std::vector<Eigen::Matrix3d> rots) const
-    {
-        Eigen::Matrix3d u = rots[0];
-        Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
-
-        for (size_t iters = 0; iters < 5; ++iters)
-        {
-            Eigen::MatrixXd v(3, rots.size());
-            Eigen::Matrix3d u_inv = u.inverse();
-            cov = Eigen::Matrix3d::Zero();
-
-            //
-            // Build the v matrix
-            //
-            for (size_t i = 0; i < rots.size(); ++i)
-            {
-                v.col(i) = ln_r(rots[i] * u_inv);
-            }
-
-            //
-            // Compute covariance and mean
-            //
-            Eigen::Vector3d tangent_space_avg = Eigen::Vector3d::Zero();
-            for (size_t i = 0; i < rots.size(); ++i)
-            {
-                double cov_weight = params.cov_weight.second;
-                if (i == 0)
-                    cov_weight = params.cov_weight.first;
-
-                double mean_weight = params.mean_weight.second;
-                if (i == 0)
-                    cov_weight = params.mean_weight.first;
-
-                cov += cov_weight * v.col(i) * v.col(i).transpose();
-                tangent_space_avg += mean_weight * v.col(i);
-            }
-            u = exp_r(tangent_space_avg) * u;
-        }
-        return ln_r(u);
     }
 
 private: // members ////////////////////////////////////////////////////////////

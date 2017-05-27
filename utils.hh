@@ -1,103 +1,140 @@
 #pragma once
 #include <Eigen/Dense>
+#include "types.hh"
 
+// UT Parameters //////////////////////////////////////////////////////////////
+namespace params
+{
+
+//
+// Normal UT parameters
+//
+constexpr double alpha = 1E-2;
+constexpr double beta = 2;
+constexpr double kappa = 0;
+constexpr double lambda = alpha * alpha * (ukf::states::NUM_STATES + kappa) - ukf::states::NUM_STATES;
+
+//
+// Weights for computing sigma points, the first element should be the weight
+// of the 0th sigma point and the other weights are applied to the rest
+//
+constexpr std::pair<double, double> mean_weights = {lambda / (ukf::states::NUM_STATES + lambda),
+                                                    0.5 / ukf::states::NUM_STATES + lambda};
+constexpr std::pair<double, double> cov_weights = {mean_weights.first + (1 - alpha * alpha + beta),
+                                                   mean_weights.second};
+
+//
+// The factor multiplied by the square root of the covariance matrix before
+// each UT, computed once here for convenience
+//
+const double sqrt_cov_factor = sqrt(ukf::states::NUM_STATES + lambda);
+
+} // namespace params
+
+// UKF Helper Functions ///////////////////////////////////////////////////////
+namespace ukf_utils
+{
+
+//
+// Convert a state and covariance into a set of discrete states as part of the
+// Unscented Transform
+//
+ukf::SigmaPoints compute_sigma_points(const ukf::State& state,
+                                      const ukf::Covariance& covariance);
+
+//
+// Given a set of sigma points, compute an expected State and associated
+// covariance
+//
+ukf::StateAndCovariance state_from_sigma_points(const ukf::SigmaPoints &points);
+
+} // namespace ukf_utils
+
+// Operator Overloads /////////////////////////////////////////////////////////
 //
 // Multiplication between two quaternions (which results in another quaternion)
 // This is overloaded for any file that includes this header (that may change?)
 //
 Eigen::Quaterniond operator*(const Eigen::Quaterniond &rhs,
-                             const Eigen::Quaterniond &lhs )
+                             const Eigen::Quaterniond &lhs);
+
+// Rotation Helpers ///////////////////////////////////////////////////////////
+namespace rotation_helpers
 {
-    const double w = rhs.w() * lhs.w() - rhs.x() * lhs.x() - rhs.y() * lhs.y() - rhs.z() * lhs.z();
-    const double x = rhs.w() * lhs.x() + rhs.x() * lhs.w() + rhs.y() * lhs.z() - rhs.z() * lhs.y();
-    const double y = rhs.w() * lhs.y() - rhs.x() * lhs.z() + rhs.y() * lhs.w() + rhs.z() * lhs.x();
-    const double z = rhs.w() * lhs.z() + rhs.x() * lhs.y() - rhs.y() * lhs.x() + rhs.z() * lhs.w();
-
-    return {w, x, y, z};
-}
-
 //
 // Helper function to rotate a Vector by a Quaternion, the vector can be any magnitude
 // and will be returned with the same magnitude it was passed in with
 //
 Eigen::Vector3d rotate_vec_by_quat(const Eigen::Vector3d & vector,
-                                   const Eigen::Quaterniond &quat)
-{
-    const Eigen::Quaterniond quat_conj(quat.w(), -quat.x(), -quat.y(), -quat.z());
-    const Eigen::Quaterniond vector_quat(0, vector.x(), vector.y(), vector.z());
+                                   const Eigen::Quaterniond &quat);
 
-    // Need to normalize vector_quat since it's not valid if it's not
-    const Eigen::Quaterniond res = quat * vector_quat.normalized() * quat_conj;
-
-    // The caller will want a vector of the same magnitude that they gave us
-    return vector_quat.norm() * Eigen::Vector3d(res.x(), res.y(), res.z());
-}
-
-//
-// These functions operate on rotation matrices
 //
 // Computes the mapping from R3 -> SO3
 // Basically from the tangent space of one rotation to another rotation
 //
-Eigen::Matrix3d exp_r(const Eigen::Vector3d &w)
-{
-    // skew symmetric matrix forming the Lie Algebra
-    Eigen::Matrix3d w_x;
-    w_x <<   0.0, -w.z(),  w.y(),
-           w.z(),    0.0, -w.x(),
-          -w.y(),  w.x(),    0.0;
-
-    // compute theta squared which can be used without square rooting
-    const double theta_2 = w.transpose() * w;
-
-    // taylor series expansion
-    Eigen::Matrix3d second_term = w_x;
-    second_term *= (1 - theta_2 / 6.0 + (theta_2 * theta_2) / 120.0);
-
-    Eigen::Matrix3d third_term = w_x * w_x;
-    third_term *= (0.5 - theta_2 / 12.0 + (theta_2 * theta_2) / 720.0);
-
-    return Eigen::Matrix3d::Identity(3, 3) + second_term + third_term;
-}
+Eigen::Matrix3d exp_r(const Eigen::Vector3d &w);
 
 //
 // Goes the other way, SO3 -> R3 tangent space
 //
-Eigen::Vector3d ln_r(const Eigen::Matrix3d &R)
-{
-    const double theta = acos((R.trace() - 1) / 2.0);
-    const double factor = (0.5 + (theta * theta) / 12.0 + (7 * pow(theta, 4)) / 720.0);
-
-    Eigen::Matrix3d out_mat = factor * (R - R.transpose());
-    return {out_mat(2, 1), -out_mat(2, 0), out_mat(1, 0)};
-}
+Eigen::Vector3d ln(const Eigen::Matrix3d &r);
 
 //
 // These functions operate on Quaternions, same as the ones above
 //
-Eigen::Quaterniond exp_q(const Eigen::Vector3d &w)
+Eigen::Quaterniond exp_q(const Eigen::Vector3d &w);
+
+Eigen::Vector3d ln(const Eigen::Quaterniond &q);
+
+inline Eigen::Matrix3d inverse(const Eigen::Matrix3d &rot);
+
+inline Eigen::Quaterniond inverse(const Eigen::Quaterniond &rot);
+
+//
+// Compute the average of a set of rotation matrices
+// http://ethaneade.com/lie.pdf pg.25
+//
+template <typename Rotation_t>
+Rotation_t average_rotations(const std::vector<Rotation_t> &rots,
+                             const size_t converge_iters = 3)
 {
-    double theta = w.norm();
-    if (theta < 1E-6)
+    Rotation_t u = rots[0];
+    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
+
+    //
+    // At each iteration, find the distance between all rotations and the current
+    // estimate for the mean. Update the mean to minimize the distance between all the
+    // rotations
+    //
+    for (size_t iters = 0; iters < converge_iters; ++iters)
     {
-        return {1.0, 0.0, 0.0, 0.0};
+        //
+        // v keeps track of the distances (in the tangent space) between all the rotations
+        //
+        Eigen::MatrixXd v(3, rots.size());
+        Rotation_t u_inv = inverse(u);
+        for (size_t i = 0; i < rots.size(); ++i)
+        {
+            v.col(i) = ln(rots[i] * u_inv);
+        }
+
+        //
+        // Update our rotation estimate for the mean using the mean computed in the
+        // tangent space
+        //
+        Eigen::Vector3d tangent_space_avg = params::mean_weights.first * v.col(0);
+        cov = params::cov_weights.first * v.col(0) * v.col(0).transpose();
+        double cov_weight = params::cov_weights.second;
+        double mean_weight = params::mean_weights.second;
+        for (size_t i = 1; i < rots.size(); ++i)
+        {
+            cov += cov_weight * v.col(i) * v.col(i).transpose();
+            tangent_space_avg += mean_weight * v.col(i);
+        }
+        u = exp_r(tangent_space_avg) * u;
     }
 
-    Eigen::Quaterniond result;
-    result.w() = cos(theta / 2.0);
-    result.vec() = w * sin(theta / 2.0) / theta;
-    return result;
+    return u;
 }
+} // namespace rotation_helpers
 
-Eigen::Vector3d ln_q(const Eigen::Quaterniond &q)
-{
-    Eigen::Vector3d result;
-    double theta = acos(q.w());
-
-    if (theta < 1E-6)
-    {
-        return {0.0, 0.0, 0.0};
-    }
-
-    return 2 * q.vec() * theta / sin(theta);
-}

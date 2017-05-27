@@ -1,31 +1,13 @@
+#define BOOST_TEST_MODULE Utils Tests
+#include <boost/test/included/unit_test.hpp>
 #include <Eigen/Dense>
 #include <iostream>
-#include <assert.h>
 
 #include "../utils.hh"
 
-//
-// File used for testing the utility functions
-// TODO: Make into actual unit tests
-//
+#define A_TOL 1E-5
+#define EIGEN_CLOSE(lhs, rhs) ((lhs - rhs).norm() < A_TOL)
 
-bool is_close(const Eigen::Vector3d & a, const Eigen::Vector3d & b, double atol=1E-4)
-{
-    return (a - b).norm() <= atol;
-}
-
-void is_close_test()
-{
-    // Make sure the stupid is_close function actually works
-    Eigen::Vector3d a(0, 1.0, 0.3);
-    Eigen::Vector3d a_close(1E-5, 1.0, 0.3 + 1E-6);
-    Eigen::Vector3d a_not_close(1.0, -1.0, 0.3);
-
-    assert(is_close(a, a_close));
-    assert(!is_close(a, a_not_close));
-
-    std::cout << "PASS: is_close looks good." << std::endl;
-}
 
 void rotate_vec_by_quat_tests()
 {
@@ -50,11 +32,4 @@ void rotate_vec_by_quat_tests()
     assert(is_close(expected_2, rotate_vec_by_quat(random_vector, random_2)));
 
     std::cout << "PASS: rotate_vec_by_quat (and by quaternion multiplicaion) look good." << std::endl;
-}
-
-int main()
-{
-    is_close_test();
-    rotate_vec_by_quat_tests();
-
 }
