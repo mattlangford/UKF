@@ -62,8 +62,7 @@ void State::print() const
     std::cout << "position:     " << position.transpose() << std::endl;
     std::cout << "velocity:     " << velocity.transpose() << std::endl;
     std::cout << "acceleration: " << acceleration.transpose() << std::endl;
-    std::cout << "orientation:  w: " << orientation.w() << ", x: " << orientation.x() <<
-                             ", y: " << orientation.y() << ", z: " << orientation.z() << std::endl;
+    std::cout << "orientation:  " << orientation << std::endl;
     std::cout << "angular_vel:  " << angular_vel.transpose()<< std::endl;
     std::cout << "angular_acc:  " << angular_acc.transpose()<< std::endl;
     std::cout << "acc_bias:     " << acc_bias.transpose() << std::endl;

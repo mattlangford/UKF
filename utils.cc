@@ -4,12 +4,20 @@
 Eigen::Quaterniond operator*(const Eigen::Quaterniond &rhs,
                              const Eigen::Quaterniond &lhs)
 {
+    // TODO: I messed up the order here, rhs and lhs need to be flipped
     const double w = rhs.w() * lhs.w() - rhs.x() * lhs.x() - rhs.y() * lhs.y() - rhs.z() * lhs.z();
     const double x = rhs.w() * lhs.x() + rhs.x() * lhs.w() + rhs.y() * lhs.z() - rhs.z() * lhs.y();
     const double y = rhs.w() * lhs.y() - rhs.x() * lhs.z() + rhs.y() * lhs.w() + rhs.z() * lhs.x();
     const double z = rhs.w() * lhs.z() + rhs.x() * lhs.y() - rhs.y() * lhs.x() + rhs.z() * lhs.w();
 
     return {w, x, y, z};
+}
+
+std::basic_ostream<char>& operator<<(std::basic_ostream<char> &out,
+                                     const Eigen::Quaterniond &rhs)
+{
+    out << "w: " << rhs.w() << " x: " << rhs.x() << " y: " << rhs.y() << " z: " << rhs.z();
+    return out;
 }
 
 // UKF Helper Functions ///////////////////////////////////////////////////////
@@ -27,16 +35,15 @@ ukf::SigmaPoints compute_sigma_points(const ukf::State& state,
     cov_sqrt *= params::sqrt_cov_factor;
 
     //
-    // Populate sigma vector, we fill out sigmas[0] with
-    // the original state.
+    // Populate sigma vector, we fill out sigmas[0] with the original state.
     // NOTE: The + operator is overloaded for the State type so that this'll work
     //
     ukf::SigmaPoints sigmas(ukf::NUM_SIGMA_POINTS);
     sigmas[0] = state;
-    for (size_t i = 1; i < ukf::NUM_STATES; ++i)
+    for (size_t i = 0; i < ukf::NUM_STATES; ++i)
     {
-        sigmas[2 * i] = state + cov_sqrt.row(i);
-        sigmas[2 * i + 1] = state + -cov_sqrt.row(i);
+        sigmas[2 * i + 1] = state + cov_sqrt.row(i);
+        sigmas[2 * i + 2] = state + -cov_sqrt.row(i);
     }
 
     return sigmas;
@@ -87,8 +94,7 @@ ukf::StateAndCovariance state_from_sigma_points(const ukf::SigmaPoints &points)
     s_c.state = new_state;
     s_c.covariance = new_covariance;
 
-    return s_c;
-
+    return s_c; 
 }
 } // namespace ukf_utils
 
@@ -132,7 +138,11 @@ Eigen::Matrix3d exp_r(const Eigen::Vector3d &w)
 Eigen::Vector3d ln(const Eigen::Matrix3d &R)
 {
     const double theta = acos((R.trace() - 1) / 2.0);
-    const double factor = (0.5 + (theta * theta) / 12.0 + (7 * pow(theta, 4)) / 720.0);
+    if (fabs(theta) < 1E-6)
+    {
+        return {0.0, 0.0, 0.0};
+    }
+    const double factor = theta / (2 * sin(theta));
 
     Eigen::Matrix3d out_mat = factor * (R - R.transpose());
     return {out_mat(2, 1), -out_mat(2, 0), out_mat(1, 0)};
@@ -155,24 +165,14 @@ Eigen::Quaterniond exp_q(const Eigen::Vector3d &w)
 Eigen::Vector3d ln(const Eigen::Quaterniond &q)
 {
     Eigen::Vector3d result;
-    double theta = acos(q.w());
+    double theta = acos(clamp(q.w(), -1.0, 1.0));
 
-    if (theta < 1E-6)
+    if (fabs(theta) < 1E-6)
     {
         return {0.0, 0.0, 0.0};
     }
 
     return 2 * q.vec() * theta / sin(theta);
-}
-
-inline Eigen::Matrix3d inverse(const Eigen::Matrix3d &rot)
-{
-    return rot.transpose();
-}
-
-inline Eigen::Quaterniond inverse(const Eigen::Quaterniond &rot)
-{
-    return {rot.w(), -rot.x(), -rot.y(), -rot.z()};
 }
 } // namespace rotation_helpers
 
