@@ -74,3 +74,24 @@ BOOST_AUTO_TEST_CASE(No_Noise_Accelerometer_Test)
     }
 }
 
+BOOST_AUTO_TEST_CASE(No_Noise_Gyroscope_Test)
+{
+    ukf_params_t params;
+
+    for (size_t i = 0; i < 5; ++i)
+    {
+        Eigen::Vector3d angular_vel = Eigen::Vector3d::Random();
+        Covariance covariance = Covariance::Identity() * Covariance::Random().cwiseAbs();
+
+        State true_state;
+        true_state.angular_vel = angular_vel;
+
+        SigmaPoints sigmas = compute_sigma_points(true_state, covariance, params);
+
+        Gyroscope g;
+        ObsCovCrossCov output = g.compute_observation(sigmas, true_state, params);
+
+        BOOST_REQUIRE(EIGEN_CLOSE(true_state.angular_vel, angular_vel));
+        // TODO: Check covariances
+    }
+}
